@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Resources:
+  DynamoToESFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: DynamoToES.lambda_handler
+      Runtime: python3.6
+      CodeUri: .
+      Description: ''
+      MemorySize: 1536
+      Timeout: 300
+      Policies:
+        - AWSLambdaExecute
+        - AmazonDynamoDBReadOnlyAccess
+      Environment:
+        Variables:
+          DomainEndpoint: !GetAtt ElasticsearchServices.DomainEndpoint
+
+  AWSLambdaElasticsearchExecutionRole:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties: 
+      Path: /service-role/
+      Roles: 
+        - !Ref DynamoToESFunctionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'es:ESHttpPut'
+            Resource: 
+              - !GetAtt ElasticsearchServices.DomainArn
+              - !Join
+                - ''
+                - - !GetAtt ElasticsearchServices.DomainArn
+                  - '/*'
+
+  StatesExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: "*"
+
+  DynamoToESStateMachine:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      DefinitionString: !Sub
+        |-
+          {
+            "Comment": "A function that iterate on a dynamoDB table, and copy its content on ES.",
+            "StartAt": "DynamoToES",
+            "States": {
+              "DynamoToES": {
+                "Type": "Task",
+                "Resource": "${DynamoToESFunction.Arn}",
+              "ResultPath":"$.response",
+                "Next": "ChoiceBasedOnNextTokenState"
+              },
+            "SuccessState": {
+              "Type": "Succeed"
+            },
+              "ChoiceBasedOnNextTokenState": {
+                "Type" : "Choice",
+                "Choices": [
+                  {
+                    "Variable": "$.response.hasNext",
+                    "BooleanEquals": true,
+                    "Next": "DynamoToES"
+                  }
+                ],
+              "Default": "SuccessState"
+              }
+            }
+          }
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+
+  ElasticsearchServices:
+    Type: 'AWS::Elasticsearch::Domain'
+    DeletionPolicy : 'Retain'
+    Properties:
+      ElasticsearchVersion: '5.5'
+      AccessPolicies:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              AWS: !Ref 'AWS::AccountId'
+            Action: "es:*"
+            Resource:  !Join
+              - ''
+              - - 'arn:aws:es:'
+                - !Ref 'AWS::Region'
+                - ':'
+                - !Ref 'AWS::AccountId'
+                - ':domain/*'

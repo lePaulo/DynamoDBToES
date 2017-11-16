@@ -1,0 +1,26 @@
+﻿{
+"Comment": "A function that iterate on a dynamoDB table, and copy its content on ES.",
+"StartAt": "DynamoToES",
+"States": {
+  "DynamoToES": {
+    "Type": "Task",
+    "Resource": "${DynamoToES.Arn}",
+  "ResultPath":"$.response",
+    "Next": "ChoiceBasedOnNextTokenState"
+  },
+"SuccessState": {
+  "Type": "Succeed"
+},
+  "ChoiceBasedOnNextTokenState": {
+    "Type" : "Choice",
+    "Choices": [
+      {
+        "Variable": "$.response.hasNext",
+        "BooleanEquals": true,
+        "Next": "DynamoToES"
+      }
+    ],
+  "Default": "SuccessState"
+  }
+}
+}

@@ -1,0 +1,5 @@
+{
+    "tablename": "myTable",
+    "partitionkey": "deviceName",
+    "sortkey": "sourceId"
+}
