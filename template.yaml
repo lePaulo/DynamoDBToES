@@ -96,6 +96,9 @@ Resources:
     DeletionPolicy : 'Retain'
     Properties:
       ElasticsearchVersion: '5.5'
+      EBSOptions: 
+        EBSEnabled: true
+        VolumeSize: 20
       AccessPolicies:
         Version: "2012-10-17"
         Statement:
